@@ -1,0 +1,36 @@
+---
+title: "Exploratory analysis"
+author: "François Roland"
+date: "20 octobre 2015"
+output: html_document
+---
+
+## Basic data information
+
+```{r, warning=FALSE,message=FALSE}
+library(dplyr)
+library(data.table)
+library(ggplot2)
+StormData <- fread("data/StormData.csv")
+```
+
+```{r}
+dim(StormData)
+names(StormData)
+```
+
+What are the different event types?
+
+```{r}
+event_types <- unique(StormData[,EVTYPE])
+length(event_types)
+```
+
+What are the most dangerous event type in terms of fatalities and injuries?
+
+```{r}
+PopulationCasualties <- StormData[,.(casualties = sum(FATALITIES + INJURIES)), by=EVTYPE]
+head(PopulationCasualties[order(-casualties)])
+qplot(EVTYPE, casualties, data = head(PopulationCasualties[order(-casualties)]), geom="bar", stat="identity")
+```
+
