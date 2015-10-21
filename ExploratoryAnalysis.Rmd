@@ -5,12 +5,13 @@ date: "20 octobre 2015"
 output: html_document
 ---
 
-## Basic data information
+# Basic data information
 
 ```{r, warning=FALSE,message=FALSE}
 library(dplyr)
 library(data.table)
 library(ggplot2)
+library(lubridate)
 StormData <- fread("data/StormData.csv")
 ```
 
@@ -19,18 +20,57 @@ dim(StormData)
 names(StormData)
 ```
 
-What are the different event types?
+# Exploratory questions
+
+## How many rows contains `NA` values in data we're interested in?
 
 ```{r}
-event_types <- unique(StormData[,EVTYPE])
-length(event_types)
+sum(complete.cases(StormData[,.(BGN_DATE, EVTYPE, FATALITIES, INJURIES, PROPDMG, CROPDMG)]))
 ```
 
-What are the most dangerous event type in terms of fatalities and injuries?
+## What are the different event types?
 
 ```{r}
-PopulationCasualties <- StormData[,.(casualties = sum(FATALITIES + INJURIES)), by=EVTYPE]
-head(PopulationCasualties[order(-casualties)])
-qplot(EVTYPE, casualties, data = head(PopulationCasualties[order(-casualties)]), geom="bar", stat="identity")
+event.types <- unique(StormData[,EVTYPE])
+```
+
+So there are `r length(event.types)` different values in the dataset while the
+documentation contains only 48 values.
+
+## How many event types are recorded over time?
+
+```{r}
+EventTypesOverTime <- StormData %>%
+    mutate(year = year(mdy_hms(BGN_DATE)), event_type = factor(tolower(EVTYPE))) %>%
+    select(year, event_type) %>%
+    group_by(year, event_type) %>%
+    summarise(event_count = n())
+qplot(year, data = EventTypesOverTime, binwidth = 1)
+```
+
+The graph shows that before 1993, there is not a lot of event types recorded.
+Thus it is probably wiser to drop data before 1993. The question is not yet
+answered completely as we don't have a clue about corrected event types.
+
+# EVTYPE clean up
+
+## How can I map EVTYPE values?
+
+I first have to figure out which values are OK and which are not.
+The file even_types.csv has been created by manually collating event types from
+StormData_documentation.pdf. It contains 48 values.
+
+```{r evtype_mapping_function}
+target.types <- fread("event_types.csv")
+CleanEvtype <- function(name) {
+    tolower(name)
+}
+target.types <- target.types[, cleaned := CleanEvtype(event_type)]
+setkey(target.types, cleaned)
+mapped.types <- data.table(original = event.types)
+mapped.types <- mapped.types[, cleaned := CleanEvtype(original)]
+setkey(mapped.types, cleaned)
+mapped.types <- merge(mapped.types, target.types, all.x = T)
+mapped.types[,.N,by=event_type]
 ```
 
