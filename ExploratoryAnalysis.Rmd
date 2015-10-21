@@ -8,6 +8,7 @@ output: html_document
 # Basic data information
 
 ```{r, warning=FALSE,message=FALSE}
+library(stringr)
 library(dplyr)
 library(data.table)
 library(ggplot2)
@@ -61,16 +62,38 @@ The file even_types.csv has been created by manually collating event types from
 StormData_documentation.pdf. It contains 48 values.
 
 ```{r evtype_mapping_function}
-target.types <- fread("event_types.csv")
-CleanEvtype <- function(name) {
-    tolower(name)
+mapping <- fread("event_types.csv")
+mapped.types <- data.table(
+    original = event.types,
+    cleaned = str_trim(str_to_title(event.types)))
+for (key in mapping[,cleaned]) {
+    mapped.types <- mapped.types[grep(paste0("^", key, ".*"), cleaned), target := mapping[cleaned == key, target]]
 }
-target.types <- target.types[, cleaned := CleanEvtype(event_type)]
-setkey(target.types, cleaned)
-mapped.types <- data.table(original = event.types)
-mapped.types <- mapped.types[, cleaned := CleanEvtype(original)]
-setkey(mapped.types, cleaned)
-mapped.types <- merge(mapped.types, target.types, all.x = T)
-mapped.types[,.N,by=event_type]
+setkey(mapped.types, original)
+mapped.types[,.N, by = is.na(target)]
+StormData <- merge(StormData, mapped.types, all.x = TRUE, by.x = "EVTYPE", by.y = "original")
+StormData[,.N, by = is.na(target)]
+```
+
+Let's now check the event type histogram after evtype cleanup.
+
+```{r}
+EventTypesOverTime <- StormData %>%
+    mutate(year = year(mdy_hms(BGN_DATE)), event_type = factor(target)) %>%
+    select(year, event_type) %>%
+    group_by(year, event_type) %>%
+    summarise(event_count = n())
+qplot(year, data = EventTypesOverTime, binwidth = 1)
+```
+
+Results are very interesting.
+
+I decide to drop data before 1993 because they lack too much records.
+
+```{r}
+StormData <- StormData %>%
+    mutate(year = year(mdy_hms(BGN_DATE)), event_type = factor(target)) %>%
+    select(year, event_type, INJURIES, FATALITIES, PROPDMG, PROPDMGEXP, CROPDMG, CROPDMGEXP) %>%
+    filter(year > 1992, !is.na(event_type))
 ```
 
