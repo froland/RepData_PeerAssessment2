@@ -1,9 +1,11 @@
 ---
-title: "Storms and other severe weather events impacts on public health and economy between 1993 and 2011"
-author: François Roland
-output: 
-  html_document: 
+title: Storms and other severe weather events impacts on public health and economy
+  between 1993 and 2011
+output:
+  html_document:
     fig_caption: yes
+  pdf_document: default
+date: "25 October 2015"
 ---
 
 # Synopsis
@@ -17,7 +19,7 @@ characteristics of major storms and weather events in the United States,
 including when and where they occur, as well as estimates of any fatalities,
 injuries, and property damage. We found that the highest human impact in terms
 of casualties is caused by tornadoes and the greatest economic impact is related
-to floods.
+to flash floods.
 
 # Data Processing
 
@@ -35,6 +37,7 @@ library(tidyr)
 library(dplyr)
 library(data.table)
 library(ggplot2)
+library(scales)
 library(lubridate)
 library(R.utils)
 ```
@@ -279,16 +282,14 @@ loss <- bind_rows(loss.top5, loss.other) %>%
     mutate(event_type = factor(event_type, as.character(event_type)))
 ```
 
-Figure 3 
+Figure 3 shows that Flash Flood causes the greatest economic consequences.
 
 ```{r, fig.cap="Figure 3. Event types with greatest economic consequences"}
-library(scales)
 qplot(event_type, loss.sum, data = loss, geom = "bar", stat = "identity") +
     xlab("") + ylab("economic consequences") +
     scale_y_continuous(labels = dollar) +
     theme(axis.text.x = element_text(angle = 15, hjust = 0.8))
 ```
-
 
 [1]: https://class.coursera.org/repdata-033/human_grading/view/courses/975146/assessments/4
 [2]: https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2
