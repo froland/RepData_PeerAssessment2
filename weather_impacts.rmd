@@ -79,9 +79,60 @@ many different values.
 unique(c(StormData$propdmgexp, StormData$cropdmgexp)) %>% sort()
 ```
 
+We do our best to translate those values to a new multiplier column. The
+*data.table* package makes miracle here in terms of performance even if its
+notation can be daunting at first sight.
 
+```{r}
+setkey(StormData, cropdmgexp)
+for (int in 0:9) {
+    multiplier <- 10 ^ int
+    StormData <- StormData[as.character(int), cropdmgmult := multiplier]
+}
+StormData['', cropdmgmult := 1]
+StormData['h', cropdmgmult := 1000]
+StormData['k', cropdmgmult := 1000]
+StormData['m', cropdmgmult := 1000000]
+StormData['b', cropdmgmult := 1000000000]
+StormData[is.na(cropdmgmult), cropdmgmult := 0]
+
+setkey(StormData, propdmgexp)
+for (int in 0:9) {
+    multiplier <- 10 ^ int
+    StormData <- StormData[as.character(int), propdmgmult := multiplier]
+}
+StormData['', propdmgmult := 1]
+StormData['h', propdmgmult := 1000]
+StormData['k', propdmgmult := 1000]
+StormData['m', propdmgmult := 1000000]
+StormData['b', propdmgmult := 1000000000]
+StormData[is.na(propdmgmult), propdmgmult := 0]
+```
+
+We can now compute the real numeric damage value. We also get rid of the columns
+we won't use anymore.
+
+```{r}
+StormData[, propdmgnum := propdmg * propdmgmult][, cropdmgnum := cropdmg * cropdmgmult]
+StormData <- StormData %>%
+    select(-propdmg, -propdmgexp, -cropdmg, -cropdmgexp)
+```
+
+## Event types
+
+From the [database documentation][3], we know that there exist 48 distinct event
+types.
+
+```{r}
+event.types <- distinct(select(StormData, evtype))
+```
+
+
+But the file we got contains up to `r nrow(distinct(event.types))` different
+event type codes in the *evtype* column.
 
 # Results
 
 [1]: https://class.coursera.org/repdata-033/human_grading/view/courses/975146/assessments/4
 [2]: https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2
+[3]: https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2Fpd01016005curr.pdf
