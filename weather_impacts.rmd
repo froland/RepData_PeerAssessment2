@@ -1,0 +1,87 @@
+---
+title: "Storms and other severe weather events impacts on public health and economy between 1993 and 2011"
+author: François Roland
+output: html_document
+---
+
+# Synopsis
+
+In this report we aim to describe the impacts of storms and other severe weather
+events on public health and economy bentween 1993 and 2011. We try to determine 
+which types of event are most harmful and have the greatest economic 
+consequences. To investigate this, we obtained data from the U.S. National
+Oceanic and Atmospheric Administration's (NOAA) storm database which tracks
+characteristics of major storms and weather events in the United States,
+including when and where they occur, as well as estimates of any fatalities,
+injuries, and property damage. We found that the highest human impact in terms
+of casualties is caused by tornadoes and the greatest economic impact is related
+to floods.
+
+# Data Processing
+
+From [Coursera web site][1], we obtained data from the U.S. National Oceanic and
+Atmospheric Administration's (NOAA) storm database as a [compressed file][2].
+The events in the database start in the year 1950 and end in November 2011.
+
+## Dependencies
+
+This analysis used these R libraries:
+
+```{r, warning=FALSE,message=FALSE}
+library(stringr)
+library(tidyr)
+library(dplyr)
+library(data.table)
+library(ggplot2)
+library(lubridate)
+library(R.utils)
+```
+
+## Reading in the data
+
+We download the data from the [Coursera link][2] and uncompress it.
+
+```{r, warning=FALSE, results='hide'}
+compressed_file_path <- "data/StormData.csv.bz2"
+#download.file(
+#    "https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2",
+#    destfile = compressed_file_path)
+#uncompressed_file_path <- bunzip2(compressed_file_path)
+#StormData <- fread(uncompressed_file_path)
+StormData <- fread("data/StormData.csv")
+```
+
+We then convert all headers to lower case and get rid of the columns we won't
+use.
+
+```{r}
+names(StormData) <- tolower(names(StormData))
+StormData <- select(StormData, bgn_date, evtype, fatalities, injuries, propdmg,
+                    propdmgexp, cropdmg, cropdmgexp)
+```
+
+The file contains `r nrow(StormData)` lines and we retained the columns:
+
+```{r}
+names(StormData)
+```
+
+## Economic damages
+
+Economic damages, be it for crops or properties are coded along with an exponent
+column. In order to compare values between events, we must decode that exponent
+and compute the real impact value.
+
+Looking at the content of both exponent column content, we find that they hold
+many different values.
+
+```{r}
+unique(c(StormData$propdmgexp, StormData$cropdmgexp)) %>% sort()
+```
+
+
+
+# Results
+
+[1]: https://class.coursera.org/repdata-033/human_grading/view/courses/975146/assessments/4
+[2]: https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2
