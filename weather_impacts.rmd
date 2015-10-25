@@ -250,14 +250,45 @@ casualties <- bind_rows(casualties.top5, casualties.other) %>%
 Figure 2 shows how tornadoes accounted for the most harm during the studied
 period.
 
-```{r, fig.cap="Figure 2. Most harmful event types with respect to public health"}
+```{r, fig.cap="Figure 2. Most harmful event types to public health"}
 qplot(event_type, casualties.sum, data = casualties, geom = "bar", stat = "identity") +
-    xlab("") + ylab("casualty in number of altered human lives")
+    xlab("") + ylab("casualties in number of human lives")
 ```
 
-
-
 ## Across the United States, which types of events have the greatest economic consequences?
+
+To measure economic consequence, we chose here to sum up crop and property
+damages. Otherwise, the analysis performed is the same as for casualties.
+
+```{r}
+material.impact <- StormData %>%
+    select(event_type, propdmgnum, cropdmgnum) %>%
+    mutate(loss = propdmgnum + cropdmgnum) %>%
+    group_by(event_type) %>%
+    summarise(loss.sum = sum(loss),
+              events = n()) %>%
+    arrange(desc(loss.sum))
+loss.top5 <- material.impact %>%
+    filter(min_rank(desc(loss.sum)) < 6)
+loss.other <- material.impact %>%
+    filter(event_type %in% loss.top5$event_type) %>%
+    summarise(loss.sum = sum(loss.sum),
+              events = n()) %>%
+    mutate(event_type = "Other")
+loss <- bind_rows(loss.top5, loss.other) %>%
+    mutate(event_type = factor(event_type, as.character(event_type)))
+```
+
+Figure 3 
+
+```{r, fig.cap="Figure 3. Event types with greatest economic consequences"}
+library(scales)
+qplot(event_type, loss.sum, data = loss, geom = "bar", stat = "identity") +
+    xlab("") + ylab("economic consequences") +
+    scale_y_continuous(labels = dollar) +
+    theme(axis.text.x = element_text(angle = 15, hjust = 0.8))
+```
+
 
 [1]: https://class.coursera.org/repdata-033/human_grading/view/courses/975146/assessments/4
 [2]: https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2
