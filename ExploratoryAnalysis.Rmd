@@ -21,6 +21,8 @@ StormData <- fread("data/StormData.csv")
 dim(StormData)
 names(StormData) <- tolower(names(StormData))
 names(StormData)
+StormData <- select(StormData, bgn_date, evtype, fatalities, injuries, propdmg,
+                    propdmgexp, cropdmg, cropdmgexp)
 ```
 
 # Exploratory questions
@@ -34,13 +36,17 @@ sum(complete.cases(StormData[,.(bgn_date, evtype, fatalities, injuries, propdmg,
 ## What are the different event types?
 
 ```{r}
-event.types <- unique(StormData[,evtype])
+event.types <- distinct(select(StormData, evtype))
 ```
 
-So there are `r length(event.types)` different values in the dataset while the
+So there are `r nrow(event.types)` different values in the dataset while the
 documentation contains only 48 values.
 
 ## How many event types are recorded over time?
+
+From the documentation, we also get 2 important years:
+* until 1992, only tornadoes are recorded
+* it is not until 1996 that the whole 48 event types are recorded.
 
 ```{r}
 EventTypesOverTime <- StormData %>%
@@ -48,7 +54,9 @@ EventTypesOverTime <- StormData %>%
     select(year, event_type) %>%
     group_by(year, event_type) %>%
     summarise(event_count = n())
-qplot(year, data = EventTypesOverTime, binwidth = 1)
+qplot(year, data = EventTypesOverTime, binwidth = 1) +
+    geom_vline(xintercept = 1993, colour = "red") +
+    geom_vline(xintercept = 1996, colour = "green")
 ```
 
 The graph shows that before 1993, there is not a lot of event types recorded.
@@ -60,22 +68,46 @@ answered completely as we don't have a clue about corrected event types.
 First let's check how many different values we get in both -exp columns.
 
 ```{r exponent}
-property.exponents <- unique(StormData[,propdmgexp])
-crop.exponents <- unique(StormData[,cropdmgexp])
-unique(c(property.exponents, crop.exponents))
+StormData <- StormData %>%
+    mutate(propdmgexp = tolower(propdmgexp),
+           cropdmgexp = tolower(cropdmgexp))
+property.exponents <- unique(StormData$propdmgexp)
+crop.exponents <- unique(StormData$cropdmgexp)
+unique(c(property.exponents, crop.exponents)) %>% sort()
 ```
 
-From those data, we can build a mapping function.
+From those data, we can build multipliers and compute the numeric value of
+propdmg and cropdmg.
 
 ```{r exponent_mapping}
-multiplier <- c('h' = 100, 'k' = 1000, 'm' = 1000000, 'b' = 1000000000)
-MapExponentToMultiplier <- function(exponent) {
-    ifelse(is.integer(exponent), 10 ^ exponent, multiplier[exponent])
+setkey(StormData, cropdmgexp)
+for (int in 0:9) {
+    multiplier <- 10 ^ int
+    StormData <- StormData[as.character(int), cropdmgmult := multiplier]
 }
-mutate(StormData, property.damage.multiplier = MapExponentToMultiplier(propdmgexp),
-       crop.damage.multiplier = MapExponentToMultiplier(cropdmgexp))
-```
+StormData['', cropdmgmult := 1]
+StormData['h', cropdmgmult := 1000]
+StormData['k', cropdmgmult := 1000]
+StormData['m', cropdmgmult := 1000000]
+StormData['b', cropdmgmult := 1000000000]
+StormData[is.na(cropdmgmult), cropdmgmult := 0]
 
+setkey(StormData, propdmgexp)
+for (int in 0:9) {
+    multiplier <- 10 ^ int
+    StormData <- StormData[as.character(int), propdmgmult := multiplier]
+}
+StormData['', propdmgmult := 1]
+StormData['h', propdmgmult := 1000]
+StormData['k', propdmgmult := 1000]
+StormData['m', propdmgmult := 1000000]
+StormData['b', propdmgmult := 1000000000]
+StormData[is.na(propdmgmult), propdmgmult := 0]
+
+StormData[, propdmgnum := propdmg * propdmgmult][, cropdmgnum := cropdmg * cropdmgmult]
+StormData <- StormData %>%
+    select(-propdmg, -propdmgexp, -cropdmg, -cropdmgexp)
+```
 
 # EVTYPE clean up
 
@@ -88,10 +120,11 @@ StormData_documentation.pdf. It contains 48 values.
 ```{r evtype_mapping_function}
 mapping <- fread("event_types.csv")
 mapped.types <- data.table(
-    original = event.types,
-    cleaned = str_trim(str_to_title(event.types)))
+    original = event.types$evtype,
+    cleaned = str_trim(str_to_title(event.types$evtype)))
 for (key in mapping[,cleaned]) {
-    mapped.types <- mapped.types[grep(paste0("^", key, ".*"), cleaned), target := mapping[cleaned == key, target]]
+    pattern <- paste0("^", key, ".*")
+    mapped.types <- mapped.types[grep(pattern, cleaned), target := mapping[cleaned == key, target]]
 }
 setkey(mapped.types, original)
 mapped.types[,.N, by = is.na(target)]
@@ -107,10 +140,11 @@ EventTypesOverTime <- StormData %>%
     select(year, event_type) %>%
     group_by(year, event_type) %>%
     summarise(event_count = n())
-qplot(year, data = EventTypesOverTime, binwidth = 1)
+qplot(year, data = EventTypesOverTime, binwidth = 1) +
+    geom_vline(xintercept = 1993, colour = "red") +
+    geom_vline(xintercept = 1996, colour = "green")
 StormData <- StormData %>%
     mutate(year = year(mdy_hms(bgn_date)), event_type = factor(target)) %>%
-    select(year, event_type, injuries, fatalities, propdmg, propdmgexp, cropdmg, cropdmgexp) %>%
     filter(!is.na(event_type))
 names(StormData) <- tolower(names(StormData))
 ```
@@ -119,18 +153,9 @@ Results are very interesting.
 
 In 1992, we've got `r length(unique(StormData[year == 1992, event_type]))` different event types.
 In 1993, we've got `r length(unique(StormData[year == 1993, event_type]))` different event types.
-
-Let's check how this translates in terms of human and property damages.
-
-```{r year_explanation}
-StormData %>%
-    mutate(year.period = ifelse(year > 1992, "After", "Before")) %>%
-    group_by(year.period) %>%
-    summarise(fatalities.sum = sum(fatalities),
-              injuries.sum = sum(injuries),
-              property.damage.sum = sum(propdmg),
-              crop.damage.sum = sum(cropdmg))
-```
+In 1996, we've got `r length(unique(StormData[year == 1996, event_type]))` different event types.
+The results show that there is a big gap since 1993. But the gap between 1993
+and 1996 predicted in the documentation is not visible.
 
 I decide to drop data before 1993 because they lack too many event types.
 
@@ -142,43 +167,47 @@ StormData <- filter(StormData, year > 1992)
 
 ## Which event type has the most impact on human lives?
 
+Although fatalities and injuries are hardly comparable, we'll cumulate them
+under the term casualties for the sake of this analysis.
+
 ```{r human_impact}
 human.impact <- StormData %>%
     select(event_type, fatalities, injuries) %>%
-    gather(casualty, frequency, -event_type)
-fatalities.by.event_type <- human.impact %>%
-    filter(casualty == "fatalities") %>%
+    mutate(casualties = fatalities + injuries) %>%
     group_by(event_type) %>%
-    summarise(frequency.mean = mean(frequency),
-              frequency.sum = sum(frequency))
-
-fatalities.mean.top5 <- fatalities.by.event_type %>%
-    arrange(desc(frequency.mean)) %>%
-    head(n = 5)
-fatalities.mean.other <- human.impact %>%
-    filter(casualty == "fatalities",
-           !(event_type %in% fatalities.mean.top5$event_type)) %>%
-    mutate(event_type = "Other") %>%
-    group_by(event_type) %>%
-    summarise(frequency.mean = mean(frequency),
-              frequency.sum = sum(frequency))
-fatalities.mean <- rbind(fatalities.mean.top5,
-                         fatalities.mean.other)
-fatalities.mean
-
-fatalities.sum.top5 <- fatalities.by.event_type %>%
-    arrange(desc(frequency.sum)) %>%
-    head(n = 5)
-fatalities.sum.other <- human.impact %>%
-    filter(casualty == "fatalities",
-           !(event_type %in% fatalities.sum.top5$event_type)) %>%
-    mutate(event_type = "Other") %>%
-    group_by(event_type) %>%
-    summarise(frequency.mean = mean(frequency),
-              frequency.sum = sum(frequency))
-fatalities.sum <- rbind(fatalities.sum.top5,
-                         fatalities.sum.other)
-fatalities.sum
+    summarise(casualties.sum = sum(casualties),
+              events = n()) %>%
+    arrange(desc(casualties.sum))
+casualties.top5 <- human.impact %>%
+    filter(min_rank(desc(casualties.sum)) < 6)
+casualties.other <- human.impact %>%
+    filter(event_type %in% casualties.top5$event_type) %>%
+    summarise(casualties.sum = sum(casualties.sum),
+              events = n()) %>%
+    mutate(event_type = "Other")
+casualties <- bind_rows(casualties.top5, casualties.other) %>%
+    mutate(event_type = factor(event_type, as.character(event_type)))
+qplot(event_type, casualties.sum, data = casualties, geom = "bar", stat = "identity")
 ```
 
 ## Which event type has the most impact on crops and properties?
+
+```{r material_impact}
+material.impact <- StormData %>%
+    select(event_type, propdmgnum, cropdmgnum) %>%
+    mutate(loss = propdmgnum + cropdmgnum) %>%
+    group_by(event_type) %>%
+    summarise(loss.sum = sum(loss),
+              events = n()) %>%
+    arrange(desc(loss.sum))
+loss.top5 <- material.impact %>%
+    filter(min_rank(desc(loss.sum)) < 6)
+loss.other <- material.impact %>%
+    filter(event_type %in% loss.top5$event_type) %>%
+    summarise(loss.sum = sum(loss.sum),
+              events = n()) %>%
+    mutate(event_type = "Other")
+loss <- bind_rows(loss.top5, loss.other) %>%
+    mutate(event_type = factor(event_type, as.character(event_type)))
+qplot(event_type, loss.sum, data = loss, geom = "bar", stat = "identity")
+```
