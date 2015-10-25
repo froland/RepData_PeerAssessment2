@@ -1,7 +1,9 @@
 ---
 title: "Storms and other severe weather events impacts on public health and economy between 1993 and 2011"
 author: François Roland
-output: html_document
+output: 
+  html_document: 
+    fig_caption: yes
 ---
 
 # Synopsis
@@ -115,7 +117,7 @@ we won't use anymore.
 ```{r}
 StormData[, propdmgnum := propdmg * propdmgmult][, cropdmgnum := cropdmg * cropdmgmult]
 StormData <- StormData %>%
-    select(-propdmg, -propdmgexp, -cropdmg, -cropdmgexp)
+    select(-propdmg, -propdmgexp, -propdmgmult, -cropdmg, -cropdmgexp, -cropdmgmult)
 ```
 
 ## Event types
@@ -127,11 +129,135 @@ types.
 event.types <- distinct(select(StormData, evtype))
 ```
 
-
-But the file we got contains up to `r nrow(distinct(event.types))` different
+But the file we got contains `r nrow(distinct(event.types))` different
 event type codes in the *evtype* column.
 
+We decide to create a file `event_types.csv` that uses the event types from
+the [previously mentionned document][3] to create a mapping of the most common
+values we get from the original data file and map them to one of the 48 legal
+values. Source values are in the first column. Target values are in the second
+one.
+
+```{r}
+mapping <- fread("event_types.csv")
+```
+
+After reading this file, we'll do the following transformations in order:
+
+1. Convert the values to Title Case.
+2. Trim the white space before and after the values.
+3. For each line in the `event_types.csv` file, we search the values in the
+original file which begin with the value in the first column and substitute it
+with the value in the second column.
+
+```{r}
+mapped.types <- data.table(
+    original = event.types$evtype,
+    cleaned = str_trim(str_to_title(event.types$evtype)))
+for (key in mapping[,cleaned]) {
+    pattern <- paste0("^", key, ".*")
+    mapped.types <- mapped.types[grep(pattern, cleaned), target := mapping[cleaned == key, target]]
+}
+setkey(mapped.types, original)
+StormData <- merge(StormData, mapped.types, all.x = TRUE, by.x = "evtype", by.y = "original")
+```
+
+That transformation leaves `r StormData[is.na(target), .N]` values with an
+unknown event type. Those values are mostly coming from summary lines present in
+the file or event type we don't know how to map to one of the 48 target event
+type.
+
+We also chech the repartition of event types over time.
+
+```{r}
+EventTypesOverTime <- StormData %>%
+    mutate(year = year(mdy_hms(bgn_date)), event_type = factor(target)) %>%
+    select(year, event_type) %>%
+    group_by(year, event_type) %>%
+    summarise(event_count = n())
+```
+
+Figure 1 shows the number of distinct event types for each year. We can see
+that there is a huge difference between data before 1993 (red line) or after.
+
+```{r, fig.cap="Figure 1. Number of distinct event type per year"}
+qplot(year, data = EventTypesOverTime, binwidth = 1) +
+    ylab("distinct event types") +
+    geom_vline(xintercept = 1993, colour = "red")
+```
+
+In order to make a sound comparison and avoid too much of a bias for the only 
+event types recorded before 1993, we drop data before 1993 along with unknown
+event types. We also remove no longer used columns.
+
+```{r}
+StormData <- StormData %>%
+    mutate(year = year(mdy_hms(bgn_date)), event_type = factor(target)) %>%
+    select(-evtype, -cleaned, -target, -bgn_date) %>%
+    filter(year > 1992, !is.na(event_type))
+```
+
+These transformations leaves `r nrow(StormData)` observations between 1993 and
+2011 with the columns:
+
+```{r}
+names(StormData)
+```
+
 # Results
+
+To answer the two following questions, we decided to compare the sum of
+casualties or economic damages by event type over the whole period from 1993 to
+2011. The reasons are:
+
+1. Some event types might not occur each year. So we may not use a yearly
+average.
+2. The sum will account for the number of occurence which can vary considerably
+from one event type to the other.
+
+## Across the United States, which types of events are most harmful with respect to population health?
+
+To measure the harm to population health, we decided to compute the number of
+casualties as the sum of injuries + fatalities. This result in a *number of
+impacted lives*. Further investigations might want to consider that the cost to
+society for an injured person might be different than the cost of a killed
+person.
+
+```{r}
+human.impact <- StormData %>%
+    select(event_type, fatalities, injuries) %>%
+    mutate(casualties = fatalities + injuries) %>%
+    group_by(event_type) %>%
+    summarise(casualties.sum = sum(casualties)) %>%
+    arrange(desc(casualties.sum))
+```
+
+To get a better plot, we decided to only keep the top 5 of most harmful event
+types and gather remaining types under the *Other* category.
+
+```{r}
+casualties.top5 <- human.impact %>%
+    filter(min_rank(desc(casualties.sum)) < 6)
+casualties.other <- human.impact %>%
+    filter(event_type %in% casualties.top5$event_type) %>%
+    summarise(casualties.sum = sum(casualties.sum),
+              events = n()) %>%
+    mutate(event_type = "Other")
+casualties <- bind_rows(casualties.top5, casualties.other) %>%
+    mutate(event_type = factor(event_type, as.character(event_type)))
+```
+
+Figure 2 shows how tornadoes accounted for the most harm during the studied
+period.
+
+```{r, fig.cap="Figure 2. Most harmful event types with respect to public health"}
+qplot(event_type, casualties.sum, data = casualties, geom = "bar", stat = "identity") +
+    xlab("") + ylab("casualty in number of altered human lives")
+```
+
+
+
+## Across the United States, which types of events have the greatest economic consequences?
 
 [1]: https://class.coursera.org/repdata-033/human_grading/view/courses/975146/assessments/4
 [2]: https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2
